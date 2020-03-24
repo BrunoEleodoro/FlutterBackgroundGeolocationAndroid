@@ -29,6 +29,10 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 
+import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.embedding.engine.dart.DartExecutor;
+import io.flutter.plugin.common.MethodChannel;
+
 /**
  * A bound and started service that is promoted to a foreground service when location updates have
  * been requested and all clients unbind.
@@ -111,6 +115,12 @@ public class LocationUpdatesService extends Service {
      */
     private Location mLocation;
 
+    Context context;
+
+    FlutterEngine flutterEngine;
+
+    MethodChannel channel;
+
     public LocationUpdatesService() {
     }
 
@@ -149,8 +159,18 @@ public class LocationUpdatesService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "Service started");
+
         boolean startedFromNotification = intent.getBooleanExtra(EXTRA_STARTED_FROM_NOTIFICATION,
                 false);
+
+        context = getApplicationContext();
+
+        flutterEngine = new FlutterEngine(this);
+        flutterEngine.getNavigationChannel().setInitialRoute("/callback");
+        flutterEngine.getDartExecutor().executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault());
+        flutterEngine.getPlugins().add(new io.flutter.plugins.sharedpreferences.SharedPreferencesPlugin());
+
+        channel = new MethodChannel(flutterEngine.getDartExecutor(), "geolocation_plugin");
 
         // We got here because the user decided to remove location updates from the notification.
         if (startedFromNotification) {
@@ -179,6 +199,7 @@ public class LocationUpdatesService extends Service {
     }
 
     @Override
+
     public void onRebind(Intent intent) {
         // Called when a client (MainActivity in case of this sample) returns to the foreground
         // and binds once again with this service. The service should cease to be a foreground
@@ -206,6 +227,9 @@ public class LocationUpdatesService extends Service {
 
     @Override
     public void onDestroy() {
+        if (flutterEngine != null) {
+            flutterEngine.destroy();
+        }
         mServiceHandler.removeCallbacksAndMessages(null);
     }
 
@@ -302,6 +326,7 @@ public class LocationUpdatesService extends Service {
         Log.i(TAG, "New location: " + location);
 
         mLocation = location;
+        channel.invokeMethod("callbackLocation", location.getLatitude() + "," + location.getLongitude() + "," + location.getSpeed() + "," + serviceIsRunningInForeground(this));
 
         // Notify anyone listening for broadcasts about the new location.
         Intent intent = new Intent(ACTION_BROADCAST);
